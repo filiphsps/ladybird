@@ -20,6 +20,9 @@ public:
     QString homepage();
     void set_homepage(QString const& homepage);
 
+    bool hide_tabs();
+    void set_hide_tabs(bool const& hide_tabs);
+
 private:
     QSettings* m_qsettings;
 };

@@ -27,7 +27,8 @@ BrowserWindow::BrowserWindow(Core::EventLoop& event_loop)
     m_tabs_container->setTabsClosable(true);
 
     m_tabs_bar = m_tabs_container->findChild<QTabBar*>();
-    m_tabs_bar->hide();
+    if (s_settings->hide_tabs())
+        m_tabs_bar->hide();
 
     auto* menu = menuBar()->addMenu("&File");
 
@@ -223,7 +224,7 @@ void BrowserWindow::close_tab(int index)
         return entry == tab;
     });
 
-    if (m_tabs_container->count() <= 1)
+    if (s_settings->hide_tabs() && m_tabs_container->count() <= 1)
         m_tabs_bar->hide();
 }
 
