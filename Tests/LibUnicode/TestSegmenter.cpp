@@ -175,6 +175,230 @@ TEST_CASE(line_segmentation)
     test_line_segmentation("ab你好cd"sv, { 0u, 2u, 5u, 8u, 10u });
 }
 
+template<size_t N>
+static void test_ascii_line_segmentation(Utf16String const& string, size_t const (&expected_boundaries)[N])
+{
+    auto segmenter = Unicode::Segmenter::try_create_for_ascii_line(string.utf16_view());
+    VERIFY(segmenter);
+
+    Vector<size_t> boundaries;
+    segmenter->for_each_boundary(string.utf16_view(), [&](auto boundary) {
+        boundaries.append(boundary);
+        return IterationDecision::Continue;
+    });
+
+    EXPECT_EQ(boundaries, ReadonlySpan<size_t> { expected_boundaries });
+}
+
+static void expect_ascii_line_segmentation_matches_icu(Utf16String const& string, Unicode::Segmenter& icu_segmenter)
+{
+    auto ascii_segmenter = Unicode::Segmenter::try_create_for_ascii_line(string.utf16_view());
+    VERIFY(ascii_segmenter);
+
+    Vector<size_t> icu_boundaries;
+    icu_segmenter.for_each_boundary(string.utf16_view(), [&](auto boundary) {
+        icu_boundaries.append(boundary);
+        return IterationDecision::Continue;
+    });
+
+    Vector<size_t> ascii_boundaries;
+    ascii_segmenter->for_each_boundary(string.utf16_view(), [&](auto boundary) {
+        ascii_boundaries.append(boundary);
+        return IterationDecision::Continue;
+    });
+
+    EXPECT_EQ(ascii_boundaries, icu_boundaries);
+}
+
+TEST_CASE(ascii_line_segmentation)
+{
+    auto empty_segmenter = Unicode::Segmenter::try_create_for_ascii_line({});
+    VERIFY(empty_segmenter);
+    empty_segmenter->for_each_boundary(String {}, [&](auto) {
+        VERIFY_NOT_REACHED();
+        return IterationDecision::Break;
+    });
+
+    // Single characters and atomic words.
+    test_ascii_line_segmentation("a"_utf16, { 0u, 1u });
+    test_ascii_line_segmentation("abc"_utf16, { 0u, 3u });
+
+    // Break opportunity after whitespace.
+    test_ascii_line_segmentation("ab cd"_utf16, { 0u, 3u, 5u });
+    test_ascii_line_segmentation("ab  cd"_utf16, { 0u, 4u, 6u });
+    test_ascii_line_segmentation("ab\tcd"_utf16, { 0u, 3u, 5u });
+
+    // Hard line breaks.
+    test_ascii_line_segmentation("ab\ncd"_utf16, { 0u, 3u, 5u });
+    test_ascii_line_segmentation("ab\r\ncd"_utf16, { 0u, 4u, 6u });
+    test_ascii_line_segmentation("ab\rcd"_utf16, { 0u, 3u, 5u });
+
+    // Alphanumerics are atomic across letter/digit boundaries.
+    test_ascii_line_segmentation("abc123"_utf16, { 0u, 6u });
+    test_ascii_line_segmentation("123abc"_utf16, { 0u, 6u });
+    test_ascii_line_segmentation("a 1 b"_utf16, { 0u, 2u, 4u, 5u });
+
+    // Printable ASCII punctuation follows UAX#14 line-breaking rules.
+    test_ascii_line_segmentation("example.com"_utf16, { 0u, 11u });      // LB15d (× IS) and LB29 (IS × AL) keep the dotted name atomic.
+    test_ascii_line_segmentation("hello, world"_utf16, { 0u, 7u, 12u }); // Break after the space (LB18).
+    test_ascii_line_segmentation("a/b/c"_utf16, { 0u, 2u, 4u, 5u });     // LB13 × SY, default ÷ after SY.
+    test_ascii_line_segmentation("http://a/b"_utf16, { 0u, 7u, 9u, 10u });
+    test_ascii_line_segmentation("\"ab\""_utf16, { 0u, 4u });        // LB19 around QU.
+    test_ascii_line_segmentation("$100"_utf16, { 0u, 4u });          // LB25 PR × NU and NU × NU.
+    test_ascii_line_segmentation("5%"_utf16, { 0u, 2u });            // LB25 NU × PO.
+    test_ascii_line_segmentation("a+$b"_utf16, { 0u, 2u, 4u });      // LB24 AL × PR; PR × PR has no rule.
+    test_ascii_line_segmentation("x%20y"_utf16, { 0u, 5u });         // LB24 AL × PO; LB25 PO × NU; LB23 NU × AL.
+    test_ascii_line_segmentation(" .23"_utf16, { 0u, 1u, 4u });      // LB15c forces a break before a leading decimal point.
+    test_ascii_line_segmentation("1/2"_utf16, { 0u, 3u });           // LB25 NU × SY × NU.
+    test_ascii_line_segmentation("1)$"_utf16, { 0u, 3u });           // LB25 NU × CP and CP × PR.
+    test_ascii_line_segmentation("(ab)"_utf16, { 0u, 4u });          // LB14 OP × ; LB13 × CP.
+    test_ascii_line_segmentation(") ("_utf16, { 0u, 2u, 3u });       // LB18 break after SP.
+    test_ascii_line_segmentation("a(b)c"_utf16, { 0u, 5u });         // LB30 AL × OP and CP × AL.
+    test_ascii_line_segmentation("a-\"b"_utf16, { 0u, 4u });         // LB21 × HY and LB19 around QU.
+    test_ascii_line_segmentation("what?yes"_utf16, { 0u, 5u, 8u });  // LB13 × EX, default ÷ after EX.
+    test_ascii_line_segmentation("what?\"yes\""_utf16, { 0u, 10u }); // LB19 keeps the quoted segment atomic.
+
+    // U+007C VERTICAL LINE is UAX#14 class BA: no break before, break after.
+    test_ascii_line_segmentation("a|b"_utf16, { 0u, 2u, 3u });
+    test_ascii_line_segmentation("aaa|bbb"_utf16, { 0u, 4u, 7u });
+    test_ascii_line_segmentation("a||b"_utf16, { 0u, 3u, 4u });
+
+    // Hyphen behavior follows UAX#14: × HY before, ÷ after when not in a numeric expression.
+    // LB20a additionally glues a leading hyphen to the following letter.
+    test_ascii_line_segmentation("-foo"_utf16, { 0u, 4u });
+    test_ascii_line_segmentation("x -foo"_utf16, { 0u, 2u, 6u });
+    test_ascii_line_segmentation("word-break"_utf16, { 0u, 5u, 10u });
+    // LB25 keeps numeric expressions atomic across hyphens (HY × NU).
+    test_ascii_line_segmentation("-2"_utf16, { 0u, 2u });
+    test_ascii_line_segmentation("foo-2"_utf16, { 0u, 5u });
+    test_ascii_line_segmentation("ABCD-1234"_utf16, { 0u, 9u });
+    test_ascii_line_segmentation("-#tag"_utf16, { 0u, 5u });
+}
+
+TEST_CASE(ascii_line_segmentation_matches_icu_for_context_independent_text)
+{
+    // The fast path implements UAX#14 for ASCII inputs and should agree with ICU on every input it accepts.
+    Array test_strings = {
+        "a"_utf16,
+        "abc"_utf16,
+        "ab cd"_utf16,
+        "ab  cd"_utf16,
+        "ab\tcd"_utf16,
+        "ab\ncd"_utf16,
+        "ab\r\ncd"_utf16,
+        "abc123"_utf16,
+        "a 1 b 2"_utf16,
+        "The quick brown fox jumps over the lazy dog"_utf16,
+        "example.com"_utf16,
+        "hello, world"_utf16,
+        "a/b/c"_utf16,
+        "http://a/b"_utf16,
+        "\"ab\""_utf16,
+        "$100"_utf16,
+        "5%"_utf16,
+        "a+$b"_utf16,
+        "x%20y"_utf16,
+        " .23"_utf16,
+        "1/2"_utf16,
+        "1)$"_utf16,
+        "(ab)"_utf16,
+        ") ("_utf16,
+        "a(b)c"_utf16,
+        "a-\"b"_utf16,
+        "what?yes"_utf16,
+        "what?\"yes\""_utf16,
+        "a|b"_utf16,
+        "-foo"_utf16,
+        "word-break"_utf16,
+        "foo-2"_utf16,
+        "ABCD-1234"_utf16,
+        "a[b]c"_utf16,
+        "$(100)"_utf16,
+        "10/%"_utf16,
+        "/0"_utf16,
+        ")%"_utf16,
+        "x -foo"_utf16,
+        "\"[0-9]{8,19}\""_utf16,
+    };
+
+    auto icu_segmenter = Unicode::Segmenter::create(Unicode::SegmenterGranularity::Line);
+
+    for (auto const& string : test_strings) {
+        expect_ascii_line_segmentation_matches_icu(string, *icu_segmenter);
+    }
+}
+
+TEST_CASE(try_create_for_ascii_line)
+{
+    auto eligible = [](StringView text) {
+        auto string = Utf16String::from_utf8(text);
+        return Unicode::Segmenter::try_create_for_ascii_line(string.utf16_view()) != nullptr;
+    };
+
+    // Letters, digits, and whitespace are admitted.
+    EXPECT(eligible(""sv));
+    EXPECT(eligible("hello"sv));
+    EXPECT(eligible("hello world"sv));
+    EXPECT(eligible("123"sv));
+    EXPECT(eligible("abc 123\nxyz"sv));
+    EXPECT(eligible("a\tb\r\nc"sv));
+
+    // Printable ASCII punctuation is admitted.
+    EXPECT(eligible("hello, world"sv));
+    EXPECT(eligible("a/b"sv));
+    EXPECT(eligible("example.com"sv));
+    EXPECT(eligible("word-break"sv));
+    EXPECT(eligible("$100"sv));
+    EXPECT(eligible("\"quoted\""sv));
+    EXPECT(eligible("1/2"sv));
+    EXPECT(eligible(" .23"sv));
+    EXPECT(eligible("-#tag"sv));
+    EXPECT(eligible("(ab)"sv));
+    EXPECT(eligible("[ab]"sv));
+    EXPECT(eligible("{ab}"sv));
+
+    // Unsupported controls and non-ASCII are rejected so that ICU handles them.
+    EXPECT(!eligible("\x1b"sv));
+    EXPECT(!eligible("你好"sv));
+}
+
+TEST_CASE(ascii_line_segmenter_clone_independence)
+{
+    auto utf16_a = "ab cd"_utf16;
+    auto segmenter_a = Unicode::Segmenter::try_create_for_ascii_line(utf16_a.utf16_view());
+    VERIFY(segmenter_a);
+
+    auto segmenter_b = segmenter_a->clone();
+    segmenter_b->set_segmented_text("xy"_string);
+
+    EXPECT_EQ(segmenter_a->next_boundary(0).value_or(0u), 3u);
+    EXPECT_EQ(segmenter_b->next_boundary(0).value_or(0u), 2u);
+}
+
+TEST_CASE(ascii_line_segmenter_next_boundary_inclusive)
+{
+    auto utf16 = "ab cd"_utf16;
+    auto segmenter = Unicode::Segmenter::try_create_for_ascii_line(utf16.utf16_view());
+    VERIFY(segmenter);
+
+    // Inclusive::Yes returns the index itself when it is a boundary.
+    EXPECT_EQ(segmenter->next_boundary(0, Unicode::Segmenter::Inclusive::Yes).value_or(0u), 0u);
+    EXPECT_EQ(segmenter->next_boundary(3, Unicode::Segmenter::Inclusive::Yes).value_or(0u), 3u);
+    EXPECT_EQ(segmenter->next_boundary(5, Unicode::Segmenter::Inclusive::Yes).value_or(0u), 5u);
+
+    // Inclusive::Yes at a non-boundary returns the next boundary.
+    EXPECT_EQ(segmenter->next_boundary(1, Unicode::Segmenter::Inclusive::Yes).value_or(0u), 3u);
+    EXPECT_EQ(segmenter->next_boundary(2, Unicode::Segmenter::Inclusive::Yes).value_or(0u), 3u);
+    EXPECT_EQ(segmenter->next_boundary(4, Unicode::Segmenter::Inclusive::Yes).value_or(0u), 5u);
+
+    // Past the end returns empty.
+    EXPECT(!segmenter->next_boundary(5).has_value());
+    EXPECT(!segmenter->next_boundary(10).has_value());
+
+    // Previous boundary clamps from past the end, matching the ICU-backed segmenter.
+    EXPECT_EQ(segmenter->previous_boundary(10).value_or(0u), 5u);
+}
+
 TEST_CASE(out_of_bounds)
 {
     {
