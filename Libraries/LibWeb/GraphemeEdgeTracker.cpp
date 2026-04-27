@@ -6,6 +6,7 @@
 
 #include <AK/Utf16View.h>
 #include <LibGfx/TextLayout.h>
+#include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Text.h>
 #include <LibWeb/GraphemeEdgeTracker.h>
 #include <LibWeb/Layout/TextNode.h>
@@ -38,7 +39,9 @@ static float measure_text_width(Layout::TextNode const& text_node, Utf16View con
     auto grapheme_segmenter = text_node.grapheme_segmenter().clone();
     grapheme_segmenter->set_segmented_text(text);
 
-    auto line_segmenter = text_node.line_segmenter().clone();
+    // NB: The text node's cached line segmenter may be the ASCII fast-path variant, which only accepts a subset
+    //     of inputs; route through the document's ICU segmenter so arbitrary subviews are handled.
+    auto line_segmenter = text_node.document().line_segmenter().clone();
     line_segmenter->set_segmented_text(text);
 
     Layout::TextNode::ChunkIterator iterator { text_node, text, *grapheme_segmenter, *line_segmenter, CSS::WordBreak::Normal, false, false };

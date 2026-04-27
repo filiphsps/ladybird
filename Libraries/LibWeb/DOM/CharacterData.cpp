@@ -146,8 +146,9 @@ WebIDL::ExceptionOr<void> CharacterData::replace_data(size_t offset, size_t coun
 
     if (m_grapheme_segmenter)
         m_grapheme_segmenter->set_segmented_text(m_data);
-    if (m_line_segmenter)
-        m_line_segmenter->set_segmented_text(m_data);
+    // The line segmenter may be the ASCII fast-path variant, which only accepts a subset of inputs; let the
+    // lazy getter re-pick the implementation against the new data.
+    m_line_segmenter = nullptr;
     if (m_word_segmenter)
         m_word_segmenter->set_segmented_text(m_data);
 
@@ -190,8 +191,12 @@ Unicode::Segmenter& CharacterData::grapheme_segmenter() const
 Unicode::Segmenter& CharacterData::line_segmenter() const
 {
     if (!m_line_segmenter) {
-        m_line_segmenter = document().line_segmenter().clone();
-        m_line_segmenter->set_segmented_text(m_data);
+        if (auto ascii = Unicode::Segmenter::try_create_for_ascii_line(m_data.utf16_view())) {
+            m_line_segmenter = ascii.release_nonnull();
+        } else {
+            m_line_segmenter = document().line_segmenter().clone();
+            m_line_segmenter->set_segmented_text(m_data);
+        }
     }
 
     return *m_line_segmenter;

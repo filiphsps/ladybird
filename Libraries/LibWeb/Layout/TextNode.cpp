@@ -416,8 +416,13 @@ Unicode::Segmenter& TextNode::grapheme_segmenter() const
 Unicode::Segmenter& TextNode::line_segmenter() const
 {
     if (!m_line_segmenter) {
-        m_line_segmenter = document().line_segmenter().clone();
-        m_line_segmenter->set_segmented_text(text_for_rendering());
+        auto const& text = text_for_rendering();
+        if (auto ascii = Unicode::Segmenter::try_create_for_ascii_line(text.utf16_view())) {
+            m_line_segmenter = ascii.release_nonnull();
+        } else {
+            m_line_segmenter = document().line_segmenter().clone();
+            m_line_segmenter->set_segmented_text(text);
+        }
     }
 
     return *m_line_segmenter;
