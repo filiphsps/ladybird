@@ -36,6 +36,13 @@ project(ladybird
         HOMEPAGE_URL "https://ladybird.org"
 )
 
+if (APPLE AND LADYBIRD_GUI_FRAMEWORK STREQUAL "AppKit")
+    enable_language(Swift)
+    if (CMAKE_Swift_COMPILER_VERSION VERSION_LESS 5.9)
+        message(FATAL_ERROR "Swift 5.9 or newer required (found ${CMAKE_Swift_COMPILER_VERSION})")
+    endif()
+endif()
+
 if (ANDROID OR IOS)
     set(BUILD_SHARED_LIBS OFF)
 endif()
