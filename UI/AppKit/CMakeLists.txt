@@ -1,4 +1,5 @@
 add_library(ladybird_swift STATIC
+    Interface/Dialogs.swift
     Interface/InfoBar.swift
     Interface/Models/TabModel.swift
     Interface/SearchPanel.swift
@@ -31,6 +32,8 @@ add_library(ladybird_impl STATIC
     Interface/Autocomplete.mm
     Interface/BookmarkFolder.mm
     Interface/BookmarksBar.mm
+    Interface/Bridge/LBBookmarkItem.mm
+    Interface/Bridge/LBBookmarkPromise.mm
     Interface/Bridge/LBFindInPageResult.mm
     Interface/Event.mm
     Interface/LadybirdWebView.mm

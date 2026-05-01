@@ -15,9 +15,13 @@
 #import <Application/Application.h>
 #import <Application/ApplicationDelegate.h>
 #import <Interface/BookmarksBar.h>
+#import <Interface/Bridge/LBBookmarkItem.h>
+#import <Interface/Bridge/LBBookmarkPromise+Internal.h>
 #import <Interface/LadybirdWebView.h>
 #import <Interface/Tab.h>
 #import <Interface/TabController.h>
+
+#import "LadybirdSwift.h"
 
 #if !__has_feature(objc_arc)
 #    error "This project requires ARC"
@@ -200,174 +204,82 @@ Optional<Application::BookmarkID> Application::bookmark_item_id_for_context_menu
     return {};
 }
 
-static constexpr CGFloat BOOKMARK_LABEL_WIDTH = 40;
-static constexpr CGFloat BOOKMARK_TEXT_WIDTH = 300;
-static constexpr CGFloat BOOKMARK_SPACING = 8;
-
-static NSTextField* create_bookmark_dialog_text_field(Optional<String const&> text)
-{
-    auto* text_field = [[NSTextField alloc] init];
-    [[text_field cell] setScrollable:YES];
-    [[text_field cell] setWraps:NO];
-    [[text_field widthAnchor] constraintEqualToConstant:BOOKMARK_TEXT_WIDTH].active = YES;
-
-    if (text.has_value())
-        [text_field setStringValue:Ladybird::string_to_ns_string(*text)];
-
-    return text_field;
-}
-
-static NSView* create_bookmark_dialog_row(NSString* label_text, NSTextField* text_field)
-{
-    auto* row = [[NSStackView alloc] init];
-    [row setAlignment:NSLayoutAttributeCenterY];
-    [row setOrientation:NSUserInterfaceLayoutOrientationHorizontal];
-    [row setSpacing:BOOKMARK_SPACING];
-
-    auto* label = [NSTextField labelWithString:label_text];
-    [label setAlignment:NSTextAlignmentRight];
-    [[label widthAnchor] constraintEqualToConstant:BOOKMARK_LABEL_WIDTH].active = YES;
-
-    [row addArrangedSubview:label];
-    [row addArrangedSubview:text_field];
-
-    auto size = [row fittingSize];
-    [row setFrame:NSMakeRect(0, 0, size.width, size.height)];
-    return row;
-}
-
-static NSAlert* create_bookmark_dialog(NSString* title, NSView* first_responder, NSArray<NSView*>* rows)
-{
-    auto* container = [[NSStackView alloc] init];
-    [container setAlignment:NSLayoutAttributeLeading];
-    [container setOrientation:NSUserInterfaceLayoutOrientationVertical];
-    [container setSpacing:BOOKMARK_SPACING];
-
-    for (NSView* row in rows)
-        [container addArrangedSubview:row];
-
-    auto size = [container fittingSize];
-    [container setFrame:NSMakeRect(0, 0, size.width, size.height)];
-
-    auto* dialog = [[NSAlert alloc] init];
-    [dialog setAccessoryView:container];
-    [dialog setMessageText:title];
-    [[dialog addButtonWithTitle:@"OK"] setTag:NSModalResponseOK];
-    [[dialog addButtonWithTitle:@"Cancel"] setTag:NSModalResponseCancel];
-    [[dialog window] setInitialFirstResponder:first_responder];
-
-    return dialog;
-}
-
-template<typename PromiseType>
-static NonnullRefPtr<PromiseType> display_add_or_edit_bookmark_dialog(
-    Tab* parent,
-    NSString* title,
-    Optional<URL::URL const&> current_url,
-    Optional<String const&> current_title)
-{
-    auto promise = PromiseType::construct();
-
-    auto* url_field = create_bookmark_dialog_text_field(current_url.map([](auto const& url) { return url.serialize(); }));
-    auto* title_field = create_bookmark_dialog_text_field(current_title);
-
-    auto* dialog = create_bookmark_dialog(title, url_field, @[
-        create_bookmark_dialog_row(@"URL:", url_field),
-        create_bookmark_dialog_row(@"Title:", title_field),
-    ]);
-
-    [dialog beginSheetModalForWindow:parent
-                   completionHandler:^(NSModalResponse response) {
-                       if (response != NSModalResponseOK) {
-                           promise->reject(Error::from_errno(ECANCELED));
-                           return;
-                       }
-
-                       auto url = WebView::sanitize_url(Ladybird::ns_string_to_string([url_field stringValue]));
-                       if (!url.has_value()) {
-                           promise->reject(Error::from_errno(EINVAL));
-                           return;
-                       }
-
-                       Optional<String> bookmark_title;
-                       if (auto text = Ladybird::ns_string_to_string([title_field stringValue]); !text.is_empty())
-                           bookmark_title = move(text);
-
-                       promise->resolve(WebView::BookmarkItem::Bookmark {
-                           .url = url.release_value(),
-                           .title = move(bookmark_title),
-                           .favicon_base64_png = {},
-                       });
-                   }];
-
-    return promise;
-}
-
 NonnullRefPtr<Application::BookmarkPromise> Application::display_add_bookmark_dialog() const
 {
     ApplicationDelegate* delegate = [NSApp delegate];
 
-    Optional<URL::URL> current_url;
-    Optional<String> current_title;
+    NSString* url_string = nil;
+    NSString* title_string = nil;
 
     if (auto view = active_web_view(); view.has_value()) {
-        current_url = view->url();
-        current_title = view->title().to_utf8();
+        url_string = Ladybird::string_to_ns_string(view->url().serialize());
+        title_string = Ladybird::utf16_string_to_ns_string(view->title());
     }
 
-    return display_add_or_edit_bookmark_dialog<BookmarkPromise>([delegate activeTab], @"Add Bookmark", current_url, current_title);
+    auto promise = BookmarkPromise::construct();
+    auto* objc_promise = [[LBBookmarkPromise alloc] initWithPromise:promise];
+
+    [LBDialogs presentAddBookmarkDialogForWindow:[delegate activeTab]
+                                      initialURL:url_string
+                                    initialTitle:title_string
+                                         promise:objc_promise];
+    return promise;
 }
 
 NonnullRefPtr<Application::BookmarkPromise> Application::display_edit_bookmark_dialog(WebView::BookmarkItem::Bookmark const& current_bookmark) const
 {
     ApplicationDelegate* delegate = [NSApp delegate];
-    return display_add_or_edit_bookmark_dialog<BookmarkPromise>([delegate activeTab], @"Edit Bookmark", current_bookmark.url, current_bookmark.title);
-}
 
-template<typename PromiseType>
-static NonnullRefPtr<PromiseType> display_add_or_edit_bookmark_folder_dialog(
-    Tab* parent,
-    NSString* title,
-    Optional<String const&> current_title)
-{
-    auto promise = PromiseType::construct();
+    NSString* title_string = current_bookmark.title.has_value()
+        ? Ladybird::string_to_ns_string(*current_bookmark.title)
+        : nil;
+    NSData* favicon_data = nil;
+    if (current_bookmark.favicon_base64_png.has_value()) {
+        auto* base64 = Ladybird::string_to_ns_string(*current_bookmark.favicon_base64_png);
+        favicon_data = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
+    }
 
-    auto* title_field = create_bookmark_dialog_text_field(current_title);
+    auto* lb_bookmark = [[LBBookmark alloc] initWithURLString:Ladybird::string_to_ns_string(current_bookmark.url.serialize())
+                                                        title:title_string
+                                                   faviconPng:favicon_data];
 
-    auto* dialog = create_bookmark_dialog(title, title_field, @[
-        create_bookmark_dialog_row(@"Title:", title_field),
-    ]);
+    auto promise = BookmarkPromise::construct();
+    auto* objc_promise = [[LBBookmarkPromise alloc] initWithPromise:promise];
 
-    [dialog beginSheetModalForWindow:parent
-                   completionHandler:^(NSModalResponse response) {
-                       if (response != NSModalResponseOK) {
-                           promise->reject(Error::from_errno(ECANCELED));
-                           return;
-                       }
-
-                       Optional<String> folder_title;
-                       if (auto text = Ladybird::ns_string_to_string([title_field stringValue]); !text.is_empty())
-                           folder_title = move(text);
-
-                       promise->resolve(WebView::BookmarkItem::Folder {
-                           .title = move(folder_title),
-                           .children = {},
-                       });
-                   }];
-
+    [LBDialogs presentEditBookmarkDialogForWindow:[delegate activeTab]
+                                         bookmark:lb_bookmark
+                                          promise:objc_promise];
     return promise;
 }
 
 NonnullRefPtr<Application::BookmarkFolderPromise> Application::display_add_bookmark_folder_dialog() const
 {
     ApplicationDelegate* delegate = [NSApp delegate];
-    return display_add_or_edit_bookmark_folder_dialog<BookmarkFolderPromise>([delegate activeTab], @"Add Folder", {});
+
+    auto promise = BookmarkFolderPromise::construct();
+    auto* objc_promise = [[LBBookmarkFolderPromise alloc] initWithPromise:promise];
+
+    [LBDialogs presentAddBookmarkFolderDialogForWindow:[delegate activeTab]
+                                               promise:objc_promise];
+    return promise;
 }
 
 NonnullRefPtr<Application::BookmarkFolderPromise> Application::display_edit_bookmark_folder_dialog(WebView::BookmarkItem::Folder const& current_folder) const
 {
     ApplicationDelegate* delegate = [NSApp delegate];
-    return display_add_or_edit_bookmark_folder_dialog<BookmarkFolderPromise>([delegate activeTab], @"Edit Folder", current_folder.title);
+
+    NSString* title_string = current_folder.title.has_value()
+        ? Ladybird::string_to_ns_string(*current_folder.title)
+        : nil;
+    auto* lb_folder = [[LBBookmarkFolder alloc] initWithTitle:title_string];
+
+    auto promise = BookmarkFolderPromise::construct();
+    auto* objc_promise = [[LBBookmarkFolderPromise alloc] initWithPromise:promise];
+
+    [LBDialogs presentEditBookmarkFolderDialogForWindow:[delegate activeTab]
+                                                 folder:lb_folder
+                                                promise:objc_promise];
+    return promise;
 }
 
 void Application::on_devtools_enabled() const
