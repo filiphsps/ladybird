@@ -1,13 +1,19 @@
 add_library(ladybird_swift STATIC
     Interface/InfoBar.swift
+    Interface/Models/TabModel.swift
+    Interface/SearchPanel.swift
 )
 set_target_properties(ladybird_swift PROPERTIES
     Swift_MODULE_NAME "LadybirdSwift"
 )
 target_compile_options(ladybird_swift PRIVATE
     "$<$<COMPILE_LANGUAGE:Swift>:SHELL:-emit-objc-header-path ${CMAKE_CURRENT_BINARY_DIR}/LadybirdSwift.h>"
+    "$<$<COMPILE_LANGUAGE:Swift>:SHELL:-import-objc-header ${CMAKE_CURRENT_SOURCE_DIR}/Interface/Bridge/SwiftBridge.h>"
 )
-target_include_directories(ladybird_swift PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+target_include_directories(ladybird_swift PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+)
 
 # Register the bridging header as an additional output of compiling one of the
 # Swift sources, so Ninja knows which rule produces it. Without this, Obj-C++
@@ -25,13 +31,13 @@ add_library(ladybird_impl STATIC
     Interface/Autocomplete.mm
     Interface/BookmarkFolder.mm
     Interface/BookmarksBar.mm
+    Interface/Bridge/LBFindInPageResult.mm
     Interface/Event.mm
     Interface/LadybirdWebView.mm
     Interface/LadybirdWebViewBridge.cpp
     Interface/LadybirdWebViewWindow.mm
     Interface/Menu.mm
     Interface/Palette.mm
-    Interface/SearchPanel.mm
     Interface/Tab.mm
     Interface/TabController.mm
     Utilities/Conversions.mm

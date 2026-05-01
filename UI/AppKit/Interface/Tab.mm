@@ -13,11 +13,13 @@
 
 #import <Application/ApplicationDelegate.h>
 #import <Interface/BookmarksBar.h>
+#import <Interface/Bridge/LBFindInPageResult.h>
 #import <Interface/LadybirdWebView.h>
-#import <Interface/SearchPanel.h>
 #import <Interface/Tab.h>
 #import <Interface/TabController.h>
 #import <Utilities/Conversions.h>
+
+#import "LadybirdSwift.h"
 
 #if !__has_feature(objc_arc)
 #    error "This project requires ARC"
@@ -26,12 +28,13 @@
 static constexpr CGFloat const WINDOW_WIDTH = 1000;
 static constexpr CGFloat const WINDOW_HEIGHT = 800;
 
-@interface Tab () <LadybirdWebViewObserver>
+@interface Tab () <LadybirdWebViewObserver, SearchPanelDelegate>
 
 @property (nonatomic, strong) NSString* title;
 @property (nonatomic, strong) NSImage* favicon;
 
 @property (nonatomic, strong) NSTitlebarAccessoryViewController* bookmarks_bar_controller;
+@property (nonatomic, strong) LBTabModel* tab_model;
 @property (nonatomic, strong) SearchPanel* search_panel;
 
 @end
@@ -93,7 +96,8 @@ static constexpr CGFloat const WINDOW_HEIGHT = 800;
         [self updateBookmarksBarDisplay:WebView::Application::settings().show_bookmarks_bar()];
         [self addTitlebarAccessoryViewController:self.bookmarks_bar_controller];
 
-        self.search_panel = [[SearchPanel alloc] init];
+        self.tab_model = [[LBTabModel alloc] init];
+        self.search_panel = [[SearchPanel alloc] initWithModel:self.tab_model delegate:self];
         [self.search_panel setHidden:YES];
 
         auto* stack_view = [NSStackView stackViewWithViews:@[
@@ -116,22 +120,24 @@ static constexpr CGFloat const WINDOW_HEIGHT = 800;
 
 - (void)find:(id)sender
 {
-    [self.search_panel find:sender];
+    [self.search_panel showAndLoadFromPasteboard];
 }
 
 - (void)findNextMatch:(id)sender
 {
-    [self.search_panel findNextMatch:sender];
+    [self.search_panel nextMatch];
 }
 
 - (void)findPreviousMatch:(id)sender
 {
-    [self.search_panel findPreviousMatch:sender];
+    [self.search_panel prevMatch];
 }
 
 - (void)useSelectionForFind:(id)sender
 {
-    [self.search_panel useSelectionForFind:sender];
+    auto selected_text = [[self web_view] view].selected_text();
+    auto* query = Ladybird::string_to_ns_string(selected_text);
+    [self.search_panel useSelection:query];
 }
 
 #pragma mark - Private methods
@@ -339,8 +345,32 @@ static constexpr CGFloat const WINDOW_HEIGHT = 800;
 - (void)onFindInPageResult:(size_t)current_match_index
            totalMatchCount:(Optional<size_t> const&)total_match_count
 {
-    [self.search_panel onFindInPageResult:current_match_index
-                          totalMatchCount:total_match_count];
+    auto* result = [[LBFindInPageResult alloc] initWithCurrentMatch:(NSInteger)current_match_index
+                                                              total:(NSInteger)total_match_count.value_or(0)
+                                                           hasTotal:total_match_count.has_value()];
+    [self.tab_model setFindInPageResult:result];
+}
+
+#pragma mark - SearchPanelDelegate
+
+- (void)searchPanelDidRequestPrevious
+{
+    [[self web_view] findInPagePreviousMatch];
+}
+
+- (void)searchPanelDidRequestNext
+{
+    [[self web_view] findInPageNextMatch];
+}
+
+- (void)searchPanelDidRequestClose
+{
+}
+
+- (void)searchPanelDidUpdateQuery:(NSString*)query caseSensitive:(BOOL)caseSensitive
+{
+    auto case_sensitivity = caseSensitive ? CaseSensitivity::CaseSensitive : CaseSensitivity::CaseInsensitive;
+    [[self web_view] findInPage:query caseSensitivity:case_sensitivity];
 }
 
 @end
