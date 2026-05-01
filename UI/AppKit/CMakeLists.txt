@@ -1,5 +1,5 @@
 add_library(ladybird_swift STATIC
-    Interface/_LadybirdSwiftPlaceholder.swift
+    Interface/InfoBar.swift
 )
 set_target_properties(ladybird_swift PROPERTIES
     Swift_MODULE_NAME "LadybirdSwift"
@@ -13,7 +13,7 @@ target_include_directories(ladybird_swift PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRE
 # Swift sources, so Ninja knows which rule produces it. Without this, Obj-C++
 # sources that #import it fail with a missing-rule error on a cold build.
 set_source_files_properties(
-    Interface/_LadybirdSwiftPlaceholder.swift
+    Interface/InfoBar.swift
     PROPERTIES
     OBJECT_OUTPUTS "${CMAKE_CURRENT_BINARY_DIR}/LadybirdSwift.h"
 )
@@ -26,7 +26,6 @@ add_library(ladybird_impl STATIC
     Interface/BookmarkFolder.mm
     Interface/BookmarksBar.mm
     Interface/Event.mm
-    Interface/InfoBar.mm
     Interface/LadybirdWebView.mm
     Interface/LadybirdWebViewBridge.cpp
     Interface/LadybirdWebViewWindow.mm

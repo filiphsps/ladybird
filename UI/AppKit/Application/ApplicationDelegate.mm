@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023-2026, Tim Flynn <trflynn89@ladybird.org>
+ * Copyright (c) 2026, Filiph Sandström <filfat@hotmail.se>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -7,12 +8,13 @@
 #include <LibWebView/Application.h>
 
 #import <Application/ApplicationDelegate.h>
-#import <Interface/InfoBar.h>
 #import <Interface/LadybirdWebView.h>
 #import <Interface/Menu.h>
 #import <Interface/Tab.h>
 #import <Interface/TabController.h>
 #import <Utilities/Conversions.h>
+
+#import "LadybirdSwift.h"
 
 #if !__has_feature(objc_arc)
 #    error "This project requires ARC"
