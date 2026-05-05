@@ -6,6 +6,8 @@
 
 #pragma once
 
+#import <Interface/Bridge/LBBookmarkActions.h>
 #import <Interface/Bridge/LBBookmarkItem.h>
+#import <Interface/Bridge/LBBookmarkMenuItem.h>
 #import <Interface/Bridge/LBBookmarkPromise.h>
 #import <Interface/Bridge/LBFindInPageResult.h>

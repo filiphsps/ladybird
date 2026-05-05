@@ -1,4 +1,5 @@
 add_library(ladybird_swift STATIC
+    Interface/BookmarksBar.swift
     Interface/Dialogs.swift
     Interface/InfoBar.swift
     Interface/Models/TabModel.swift
@@ -31,8 +32,9 @@ add_library(ladybird_impl STATIC
     Application/EventLoopImplementationMacOS.mm
     Interface/Autocomplete.mm
     Interface/BookmarkFolder.mm
-    Interface/BookmarksBar.mm
+    Interface/Bridge/LBBookmarkActions.mm
     Interface/Bridge/LBBookmarkItem.mm
+    Interface/Bridge/LBBookmarkMenuItem.mm
     Interface/Bridge/LBBookmarkPromise.mm
     Interface/Bridge/LBFindInPageResult.mm
     Interface/Event.mm

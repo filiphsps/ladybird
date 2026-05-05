@@ -12,7 +12,6 @@
 #include <LibWebView/ViewImplementation.h>
 
 #import <Application/ApplicationDelegate.h>
-#import <Interface/BookmarksBar.h>
 #import <Interface/Bridge/LBFindInPageResult.h>
 #import <Interface/LadybirdWebView.h>
 #import <Interface/Tab.h>

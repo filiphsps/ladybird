@@ -14,7 +14,7 @@
 
 #import <Application/Application.h>
 #import <Application/ApplicationDelegate.h>
-#import <Interface/BookmarksBar.h>
+#import <Interface/Bridge/LBBookmarkActions+Internal.h>
 #import <Interface/Bridge/LBBookmarkItem.h>
 #import <Interface/Bridge/LBBookmarkPromise+Internal.h>
 #import <Interface/LadybirdWebView.h>
@@ -179,10 +179,11 @@ void Application::show_bookmark_context_menu(Gfx::IntPoint content_position, Opt
     ApplicationDelegate* delegate = [NSApp delegate];
 
     if (auto* tab = [delegate activeTab]) {
-        [[tab bookmarksBar] showContextMenu:content_position
-                                       view:[tab web_view]
-                               bookmarkItem:item
-                             targetFolderID:target_folder_id];
+        [LBBookmarkActions showContextMenuForBookmarksBar:[tab bookmarksBar]
+                                          contentPosition:content_position
+                                                     view:[tab web_view]
+                                             bookmarkItem:item
+                                           targetFolderID:target_folder_id];
     }
 }
 

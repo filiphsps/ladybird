@@ -9,10 +9,12 @@
 #include <LibWebView/Menu.h>
 
 #import <Interface/BookmarkFolder.h>
-#import <Interface/BookmarksBar.h>
+#import <Interface/Bridge/LBBookmarkMenuItem+Internal.h>
 #import <Interface/Menu.h>
 #import <Utilities/Conversions.h>
 #import <objc/runtime.h>
+
+#import "LadybirdSwift.h"
 
 #if !__has_feature(objc_arc)
 #    error "This project requires ARC"
@@ -33,10 +35,12 @@ static constexpr CGFloat const BOOKMARK_FOLDER_HORIZONTAL_OVERLAP = 24;
 static constexpr CGFloat const BOOKMARK_FOLDER_SUBMENU_LEFT_SHIFT = 18;
 static constexpr CGFloat const BOOKMARK_FOLDER_ROOT_VERTICAL_SHIFT = 10;
 
-@interface BookmarkFolderItemView : NSView
+@interface BookmarkFolderItemView : NSView <LBBookmarkItemView>
 
 @property (nonatomic, weak) BookmarksBar* bookmarks_bar;
 @property (nonatomic, weak) BookmarkFolderPopover* parent_folder;
+
+@property (nonatomic, strong) LBBookmarkMenuItem* bookmarkMenuItem;
 
 @property (nonatomic, strong) NSImageView* icon_view;
 @property (nonatomic, strong) NSTextField* title_label;
@@ -63,13 +67,13 @@ static constexpr CGFloat const BOOKMARK_FOLDER_ROOT_VERTICAL_SHIFT = 10;
         m_action = action.make_weak_ptr();
         m_hovered = NO;
 
-        Ladybird::add_control_properties(self, action);
-        [self setToolTip:Ladybird::string_to_ns_string(action.tooltip())];
+        self.bookmarkMenuItem = [LBBookmarkMenuItem itemFromBookmarkAction:action];
+        [self setToolTip:self.bookmarkMenuItem.tooltip];
 
         self.icon_view = Ladybird::create_application_icon(action);
         [self addSubview:self.icon_view];
 
-        self.title_label = [NSTextField labelWithString:Ladybird::string_to_ns_string(action.text())];
+        self.title_label = [NSTextField labelWithString:self.bookmarkMenuItem.title];
         [self.title_label setFont:[NSFont menuFontOfSize:0]];
         [[self.title_label cell] setLineBreakMode:NSLineBreakByTruncatingTail];
         [self addSubview:self.title_label];
@@ -89,13 +93,13 @@ static constexpr CGFloat const BOOKMARK_FOLDER_ROOT_VERTICAL_SHIFT = 10;
         m_menu = menu.make_weak_ptr();
         m_hovered = NO;
 
-        Ladybird::add_control_properties(self, menu);
+        self.bookmarkMenuItem = [LBBookmarkMenuItem itemFromFolderMenu:menu];
 
         self.icon_view = [[NSImageView alloc] initWithFrame:NSZeroRect];
-        [self.icon_view setImage:[NSImage imageWithSystemSymbolName:@"folder" accessibilityDescription:@""]];
+        [self.icon_view setImage:self.bookmarkMenuItem.icon];
         [self addSubview:self.icon_view];
 
-        self.title_label = [NSTextField labelWithString:Ladybird::string_to_ns_string(menu.title())];
+        self.title_label = [NSTextField labelWithString:self.bookmarkMenuItem.title];
         [self.title_label setFont:[NSFont menuFontOfSize:0]];
         [[self.title_label cell] setLineBreakMode:NSLineBreakByTruncatingTail];
         [self addSubview:self.title_label];
@@ -147,8 +151,8 @@ static constexpr CGFloat const BOOKMARK_FOLDER_ROOT_VERTICAL_SHIFT = 10;
     }
 
     if ([event modifierFlags] & NSEventModifierFlagCommand) {
-        if (auto* type = Ladybird::get_control_property(self, @"type"); [type isEqualToString:@"bookmark"]) {
-            auto bookmark_id = Ladybird::ns_string_to_string(Ladybird::get_control_property(self, @"id"));
+        if (self.bookmarkMenuItem.kind == LBBookmarkMenuItemKindBookmark) {
+            auto bookmark_id = Ladybird::ns_string_to_string(self.bookmarkMenuItem.identifier);
             auto activate_tab = ([event modifierFlags] & NSEventModifierFlagShift) ? Web::HTML::ActivateTab::No : Web::HTML::ActivateTab::Yes;
 
             WebView::Application::the().open_bookmark_in_new_tab(bookmark_id, activate_tab);
